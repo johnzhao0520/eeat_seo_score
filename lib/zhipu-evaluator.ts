@@ -82,7 +82,7 @@ export class ZhipuEvaluator {
         logger.info(`智谱AI请求尝试 ${attempt}/${retries}`);
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒超时，为Vercel 10秒限制预留时间
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时，确保有时间降级到规则评估
 
         const response = await fetch(this.baseUrl, {
           method: "POST",

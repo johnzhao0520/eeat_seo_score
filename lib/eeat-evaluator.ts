@@ -223,7 +223,7 @@ export class EEATEvaluator {
     const strengths: string[] = [];
     const suggestions: string[] = [];
 
-    let score = 5; // 基础分
+    let score = 4; // 基础分，根据证据动态调整
 
     // 检查第一手经验证据
     const experienceIndicators = {
@@ -293,7 +293,7 @@ export class EEATEvaluator {
     const strengths: string[] = [];
     const suggestions: string[] = [];
 
-    let score = 5;
+    let score = 4; // 基础分，根据证据动态调整
 
     // 检查专业知识指标
     const expertiseIndicators = {
@@ -376,7 +376,7 @@ export class EEATEvaluator {
     const strengths: string[] = [];
     const suggestions: string[] = [];
 
-    let score = 5;
+    let score = 4; // 基础分，根据证据动态调整
 
     // 检查权威性指标
     const authoritativenessIndicators = {
@@ -438,7 +438,7 @@ export class EEATEvaluator {
     const strengths: string[] = [];
     const suggestions: string[] = [];
 
-    let score = 5;
+    let score = 4; // 基础分，根据证据动态调整
 
     // 检查可信度指标
     const trustworthinessIndicators = {
