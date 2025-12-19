@@ -70,8 +70,7 @@ export class ZhipuEvaluatorEnhancedV2 {
       const response = await this.makeZhipuRequest(
         messages,
         8000,
-        this.getAdaptiveTimeout(content.length, 8000, options.maxTimeoutMs, 50000),
-        2
+        this.getAdaptiveTimeout(content.length, 8000, options.maxTimeoutMs, 50000)
       );
 
       if (!response || !response.choices || response.choices.length === 0) {
@@ -122,12 +121,10 @@ export class ZhipuEvaluatorEnhancedV2 {
     context?: ArticleContext,
     options: EvaluateAIOptions = {}
   ): Promise<EEATResult | null> {
-    const chunks = this.splitContent(content, 2600);
+    const chunks = this.splitContent(content, 1800);
     if (chunks.length === 0) {
       return null;
     }
-
-    const chunkDelayMs = Number(process.env.ZHIPU_CHUNK_DELAY_MS || "200");
 
     logger.info("智谱AI Enhanced V2 分段评估开始", {
       chunkCount: chunks.length,
@@ -145,32 +142,19 @@ export class ZhipuEvaluatorEnhancedV2 {
         { role: "user", content: chunkUserPrompt }
       ];
 
-      try {
-        const response = await this.makeZhipuRequest(
-          messages,
-          1500,
-          this.getAdaptiveTimeout(chunk.length, 1500, options.maxTimeoutMs, 25000),
-          2
-        );
+      const response = await this.makeZhipuRequest(
+        messages,
+        1500,
+        this.getAdaptiveTimeout(chunk.length, 1500, options.maxTimeoutMs, 25000)
+      );
 
-        if (!response || !response.choices || response.choices.length === 0) {
-          throw new Error("智谱AI分段返回空响应");
-        }
-
-        const aiResult = this.parseAIResponse(response.choices[0].message.content);
-        const formatted = this.formatEnhancedAIResult(aiResult, chunk, title, author);
-        chunkResults.push(formatted);
-      } catch (error) {
-        logger.warn("智谱AI分段评估失败", {
-          error: error instanceof Error ? error.message : String(error),
-          chunkIndex: index + 1,
-          chunkCount: chunks.length
-        });
+      if (!response || !response.choices || response.choices.length === 0) {
+        continue;
       }
 
-      if (chunkDelayMs > 0 && index < chunks.length - 1) {
-        await this.sleep(chunkDelayMs);
-      }
+      const aiResult = this.parseAIResponse(response.choices[0].message.content);
+      const formatted = this.formatEnhancedAIResult(aiResult, chunk, title, author);
+      chunkResults.push(formatted);
     }
 
     if (chunkResults.length === 0) {
@@ -410,6 +394,273 @@ ${summaries.join("\n")}
         1200,
         this.getAdaptiveTimeout(prompt.length, 1200, options.maxTimeoutMs, 25000),
         2
+      );
+
+      if (!response || !response.choices || response.choices.length === 0) {
+        throw new Error("聚合总结返回空响应");
+      }
+
+      const aggregation = this.parseAggregationResponse(response.choices[0].message.content);
+      return aggregation;
+    } catch (error) {
+      logger.warn("聚合总结失败，使用本地总结", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return {
+        summary: this.generateSummary(chunkResults.map(result => result.summary).join("\n")),
+        suggestions: []
+      };
+    }
+  }
+
+  private parseAggregationResponse(content: string): {
+    summary: string;
+    suggestions: EEATResult["suggestions"];
+  } {
+    let jsonContent = null;
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      jsonContent = jsonMatch[1];
+    } else if (content.trim().startsWith("{") && content.trim().endsWith("}")) {
+      jsonContent = content.trim();
+    }
+
+    if (jsonContent) {
+      try {
+        const fixedJson = this.fixJsonString(jsonContent);
+        const parsed = JSON.parse(fixedJson);
+        return {
+          summary: typeof parsed.summary === "string" ? parsed.summary : "",
+          suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+        };
+      } catch (error) {
+        logger.warn("聚合总结JSON解析失败", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
+    return { summary: "", suggestions: [] };
+  }
+
+  private aggregateScores(results: EEATResult[]): EEATScores {
+    const average = (values: number[]) => {
+      if (values.length === 0) return 0;
+      return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
+    };
+
+    const mergeStrings = (values: string[], limit: number) => {
+      const seen = new Set<string>();
+      const merged: string[] = [];
+      for (const value of values) {
+        const trimmed = value.trim();
+        if (!trimmed || seen.has(trimmed)) continue;
+        seen.add(trimmed);
+        merged.push(trimmed);
+        if (merged.length >= limit) break;
+      }
+      return merged;
+    };
+
+    const buildScore = (dimension: keyof EEATScores): ScoreDetails => {
+      const scores = results.map(result => result.scores[dimension as keyof EEATScores] as ScoreDetails);
+      const numericScores = scores.map(score => score.score);
+      return {
+        score: average(numericScores),
+        evidence: mergeStrings(scores.flatMap(score => score.evidence || []), 8),
+        issues: mergeStrings(scores.flatMap(score => score.issues || []), 6),
+        strengths: mergeStrings(scores.flatMap(score => score.strengths || []), 6),
+        suggestions: mergeStrings(scores.flatMap(score => score.suggestions || []), 6)
+      };
+    };
+
+    const experience = buildScore("experience");
+    const expertise = buildScore("expertise");
+    const authoritativeness = buildScore("authoritativeness");
+    const trustworthiness = buildScore("trustworthiness");
+
+    const overall = average([experience.score, expertise.score, authoritativeness.score, trustworthiness.score]);
+
+    return {
+      experience,
+      expertise,
+      authoritativeness,
+      trustworthiness,
+      overall
+    };
+  }
+
+  private aggregateAnalysis(results: EEATResult[]): {
+    strengths: string[];
+    weaknesses: string[];
+    opportunities: string[];
+  } {
+    const mergeStrings = (values: string[], limit: number) => {
+      const seen = new Set<string>();
+      const merged: string[] = [];
+      for (const value of values) {
+        const trimmed = value.trim();
+        if (!trimmed || seen.has(trimmed)) continue;
+        seen.add(trimmed);
+        merged.push(trimmed);
+        if (merged.length >= limit) break;
+      }
+      return merged;
+    };
+
+    return {
+      strengths: mergeStrings(results.flatMap(result => result.analysis.strengths || []), 8),
+      weaknesses: mergeStrings(results.flatMap(result => result.analysis.weaknesses || []), 8),
+      opportunities: mergeStrings(results.flatMap(result => result.analysis.opportunities || []), 8)
+    };
+  }
+
+  private aggregateSuggestions(results: EEATResult[]): EEATResult["suggestions"] {
+    const suggestions = results.flatMap(result => result.suggestions || []);
+    const seen = new Set<string>();
+    const merged: EEATResult["suggestions"] = [];
+    for (const suggestion of suggestions) {
+      const key = `${suggestion.category}-${suggestion.description}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(suggestion);
+      if (merged.length >= 6) break;
+    }
+    return merged;
+  }
+
+  private getAdaptiveTimeout(
+    contentLength: number,
+    maxTokens: number,
+    requestedTimeout?: number,
+    defaultTimeout: number = 50000
+  ): number {
+    const maxTimeout = Number(process.env.ZHIPU_MAX_TIMEOUT_MS || "120000");
+    if (requestedTimeout) {
+      return Math.min(requestedTimeout, maxTimeout);
+    }
+
+    const tokenFactor = Math.ceil(maxTokens / 1000) * 6000;
+    const lengthFactor = Math.ceil(contentLength / 1000) * 4000;
+    const adaptive = defaultTimeout + tokenFactor + lengthFactor;
+
+    return Math.min(Math.max(adaptive, defaultTimeout), maxTimeout);
+  }
+
+  private splitContent(content: string, maxChunkLength: number): string[] {
+    if (content.length <= maxChunkLength) {
+      return [content];
+    }
+
+    const paragraphs = content.split(/\n\s*\n/);
+    const chunks: string[] = [];
+    let buffer = "";
+
+    for (const paragraph of paragraphs) {
+      const next = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
+      if (next.length <= maxChunkLength) {
+        buffer = next;
+        continue;
+      }
+
+      if (buffer) {
+        chunks.push(buffer);
+      }
+      if (paragraph.length > maxChunkLength) {
+        for (let i = 0; i < paragraph.length; i += maxChunkLength) {
+          chunks.push(paragraph.slice(i, i + maxChunkLength));
+        }
+        buffer = "";
+      } else {
+        buffer = paragraph;
+      }
+    }
+
+    if (buffer) {
+      chunks.push(buffer);
+    }
+
+    return chunks.filter(chunk => chunk.trim().length > 0);
+  }
+
+  private buildChunkSystemPrompt(): string {
+    return `你是E-E-A-T评估专家，需要对文章片段进行局部评估。
+
+【要求】
+1. 只基于片段内容评分，给出具体证据
+2. 每个维度至少给出1条evidence
+3. JSON格式返回，字段与完整评估一致
+4. summary只需简短概述片段要点（1-2句）
+
+返回完整JSON结构。`;
+  }
+
+  private buildChunkUserPrompt(
+    content: string,
+    index: number,
+    total: number,
+    title?: string,
+    author?: string
+  ): string {
+    return `请评估以下文章片段（第${index}/${total}段）：
+
+${title ? `标题：${title}\n` : ""}${author ? `作者：${author}\n` : ""}内容：
+${content}
+
+请严格输出JSON。`;
+  }
+
+  private async requestAggregationSummary(
+    chunkResults: EEATResult[],
+    title: string | undefined,
+    author: string | undefined,
+    aggregatedScores: EEATScores,
+    aggregatedAnalysis: { strengths: string[]; weaknesses: string[]; opportunities: string[] },
+    options: EvaluateAIOptions
+  ): Promise<{ summary: string; suggestions: EEATResult["suggestions"] }> {
+    const summaries = chunkResults.map((result, index) => {
+      return `片段${index + 1}总结：${result.summary}`;
+    });
+
+    const prompt = `请基于以下分段评估结果生成最终总结与建议（不要重新评分）。
+
+${title ? `标题：${title}\n` : ""}${author ? `作者：${author}\n` : ""}
+综合分数：
+Experience=${aggregatedScores.experience.score}
+Expertise=${aggregatedScores.expertise.score}
+Authoritativeness=${aggregatedScores.authoritativeness.score}
+Trustworthiness=${aggregatedScores.trustworthiness.score}
+
+整体优势：${aggregatedAnalysis.strengths.join("；")}
+整体不足：${aggregatedAnalysis.weaknesses.join("；")}
+改进机会：${aggregatedAnalysis.opportunities.join("；")}
+
+分段摘要：
+${summaries.join("\n")}
+
+请输出JSON格式：
+{
+  "summary": "200-300字总结",
+  "suggestions": [
+    {
+      "priority": "high|medium|low",
+      "category": "分类",
+      "description": "建议",
+      "actionItems": ["行动1", "行动2"]
+    }
+  ]
+}`;
+
+    const messages: ZhipuMessage[] = [
+      { role: "system", content: "你是评估汇总助手，负责基于分段结果输出最终总结与建议。" },
+      { role: "user", content: prompt }
+    ];
+
+    try {
+      const response = await this.makeZhipuRequest(
+        messages,
+        1200,
+        this.getAdaptiveTimeout(prompt.length, 1200, options.maxTimeoutMs, 25000)
       );
 
       if (!response || !response.choices || response.choices.length === 0) {
