@@ -8,6 +8,7 @@ interface EvaluateOptions {
   useOpenAI?: boolean;
   zhipuApiKey?: string;
   openaiApiKey?: string;
+  useChunked?: boolean;
 }
 
 export class EEATEvaluator {
@@ -44,7 +45,15 @@ export class EEATEvaluator {
 
       // 优先使用智谱AI（更经济）
       if (this.zhipuEvaluator && !options.useOpenAI) {
-        aiResult = await this.zhipuEvaluator.evaluateWithAI(content, title, author, this.articleContext);
+        aiResult = await this.zhipuEvaluator.evaluateWithAI(
+          content,
+          title,
+          author,
+          this.articleContext,
+          {
+            useChunked: options.useChunked
+          }
+        );
       }
 
       // 如果智谱AI失败或明确要求使用OpenAI

@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
       {
         useAI: body.useAI || false,
         useOpenAI: body.useOpenAI || false,
+        useChunked: body.useChunked
       }
     )
 
