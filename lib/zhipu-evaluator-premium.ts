@@ -37,11 +37,15 @@ export class ZhipuEvaluatorPremium {
     context?: ArticleContext
   ): Promise<EEATResult | null> {
     try {
+      // 对于长内容进行智能截取，确保AI能及时响应
+      const processedContent = this.preprocessContent(content);
       const systemPrompt = this.buildSystemPrompt();
-      const userPrompt = this.buildUserPrompt(content, title, author);
+      const userPrompt = this.buildUserPrompt(processedContent, title, author);
 
       logger.info("开始智谱AI Premium 评估", {
         contentLength: content.length,
+        processedLength: processedContent.length,
+        wasTruncated: processedContent.length < content.length,
         title,
         hasAuthor: !!author
       });
@@ -52,7 +56,8 @@ export class ZhipuEvaluatorPremium {
       ];
 
       // Premium 评估使用更长的超时和更多 tokens
-      const response = await this.makeZhipuRequest(messages, 10000, 55000);
+      // 调整为45秒，确保在Vercel Pro的60秒限制内完成
+      const response = await this.makeZhipuRequest(messages, 8000, 45000);
 
       if (!response || !response.choices || response.choices.length === 0) {
         throw new Error("智谱AI返回了空响应");
@@ -345,6 +350,29 @@ export class ZhipuEvaluatorPremium {
       summary: "智谱AI Premium 评估完成，但由于响应格式问题，使用默认评估。",
       suggestions: []
     };
+  }
+
+  private preprocessContent(content: string): string {
+    // 对于 Premium 版本，限制在8000字符以内，确保AI能及时响应
+    const maxLength = 8000;
+
+    if (content.length <= maxLength) {
+      return content;
+    }
+
+    // 保留开头、中间和结尾部分
+    const startLength = Math.floor(maxLength * 0.4);   // 40%
+    const endLength = Math.floor(maxLength * 0.3);    // 30%
+    const middleLength = maxLength - startLength - endLength;  // 30%
+    const middleStart = Math.floor((content.length - middleLength) / 2);
+
+    return (
+      content.substring(0, startLength) +
+      "\n\n...[内容已截取，保留核心部分]...\n\n" +
+      content.substring(middleStart, middleStart + middleLength) +
+      "\n\n...[内容已截取，保留结尾部分]...\n\n" +
+      content.substring(content.length - endLength)
+    );
   }
 
   private buildSystemPrompt(): string {
