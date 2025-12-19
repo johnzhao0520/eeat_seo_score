@@ -20,13 +20,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (body.articles.length > 10) {
+    if (body.articles.length > 50) {
       logger.warn("批量评估：文章数量超过限制", {
         actualCount: body.articles.length,
-        maxCount: 10
+        maxCount: 50
       })
       return NextResponse.json(
-        { error: "批量评估最多支持10篇文章" },
+        { error: "批量评估最多支持50篇文章" },
         { status: 400 }
       )
     }

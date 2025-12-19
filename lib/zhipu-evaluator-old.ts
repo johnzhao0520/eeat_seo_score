@@ -51,7 +51,7 @@ export class ZhipuEvaluator {
         { role: "user", content: userPrompt }
       ];
 
-      const response = await this.makeZhipuRequest(messages, 8000); // 增加tokens以支持更详细的输出
+      const response = await this.makeZhipuRequest(messages, 2000); // 限制tokens以加快响应速度
 
       if (!response || !response.choices || response.choices.length === 0) {
         throw new Error("智谱AI返回了空响应");
@@ -76,13 +76,13 @@ export class ZhipuEvaluator {
     }
   }
 
-  private async makeZhipuRequest(messages: ZhipuMessage[], maxTokens: number = 8000, retries: number = 1): Promise<ZhipuResponse> {
+  private async makeZhipuRequest(messages: ZhipuMessage[], maxTokens: number = 3500, retries: number = 1): Promise<ZhipuResponse> {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         logger.info(`智谱AI请求尝试 ${attempt}/${retries}`);
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时，匹配Vercel Pro的执行时间
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时，确保有时间降级到规则评估
 
         const response = await fetch(this.baseUrl, {
           method: "POST",
@@ -295,187 +295,66 @@ export class ZhipuEvaluator {
   }
 
   private buildSystemPrompt(): string {
-    return `你是专业的E-E-A-T评估专家，负责根据Google的Experience、Expertise、Authoritativeness和Trustworthiness原则评估文章。
+    return `你是E-E-A-T评估专家。请评估给定内容并严格按JSON格式返回结果。
 
-**关键指令：**
+评分标准（1-10分）：
+- Experience：是否有第一手经验、案例研究、数据支撑
+- Expertise：信息准确性、专业深度、时效性
+- Authoritativeness：可信来源、作者资质、引用质量
+- Trustworthiness：内容客观性、透明度、可验证性
 
-1. **输出格式**：仅提供有效的JSON。不要解释、评论或代码块（不要\`\`\`）。以{开始，以}结束。
-
-2. **一致性**：系统性地应用评分标准，在所有评估中使用相同的解释。
-
-3. **上下文感知**：根据文章类型、领域和目的调整期望值。
-
-你正在使用Google的E-E-A-T原则评估文章。你的评估必须是客观的、上下文感知的、一致的。
-
-## **评估方法：**
-
-首先，分析文章以确定：
-- **文章类型**：（教程、指南、观点/分析、新闻、产品评测、案例研究、研究、列表文章等）
-- **领域背景**：（技术/B2B、消费、医疗、金融、创意等）
-- **主要目的**：（教育、商业、信息、导航）
-
-然后使用适合该背景的视角评估每个E-E-A-T因素。
-
-## **自适应评分标准**
-
-### **Experience（1-10分）**
-
-**评分哲学**：经验在不同文章类型中表现不同。教程通过详细步骤展示经验；分析通过实际应用展示经验；指南通过全面覆盖展示经验。
-
-**经验证据可能包括**：
-- 第一手叙述、案例研究或个人示例
-- 详细的流程描述，展示"如何做"而不仅仅是"是什么"
-- 来自实际实施的具体数据、指标或结果
-- 截图、演示或原始视觉证据
-- 只有通过实践才能获得的细致见解
-- 对边界情况或实际挑战的认知
-
-**评分区间**：
-- **1-3**：纯粹理论性或通用性；缺乏任何实践基础
-- **4-5**：有限的实践元素；主要是表面级示例
-- **6-7**：扎实的实践基础，具有适合文章类型的相关示例
-- **8-9**：强有力的动手经验展示，具有详细、适用的见解
-- **10**：广泛的实践经验深度；多个丰富的示例；明确来自广泛实际应用的见解
-
-### **Expertise（1-10分）**
-
-**评分哲学**：专业能力通过准确性、深度和对文章范围和受众适当的复杂理解来展示。
-
-**专业能力证据可能包括**：
-- 准确、当前的信息，使用适当的技术/行业术语
-- 与文章目的成比例的解释深度
-- 对复杂性和权衡的细致理解
-- 超越表面信息的战略见解
-- 对困难概念的清晰解释
-- 跟上领域发展的证据
-- 作者资历或展示的知识
-
-**评分区间**：
-- **1-3**：不准确、过时或肤浅的信息
-- **4-5**：准确但基础；缺乏有意义的深度
-- **6-7**：适合文章范围的扎实专业能力；准确且相当详细
-- **8-9**：强有力的深度和复杂性；展示高级理解
-- **10**：学科的综合掌握；清晰解释复杂主题；跟上最新发展；可能包括原创框架或研究
-
-### **Authoritativeness（1-10分）**
-
-**评分哲学**：权威性来自多个信号，不仅仅是引用。每个信号的权重根据文章类型和领域而变化。
-
-**权威性证据可能包括**：
-- 来自可信、相关来源的引用（在适当时）
-- 作者资历或展示的权威性
-- 原始数据、研究或专有见解
-- 在领域中被认可为来源
-- 与权威品牌或出版物的关联
-- 工具演示或平台专业知识
-- 展示学科掌握的全面覆盖
-
-**评分区间**：
-- **1-3**：没有可信支持；可疑或缺失来源
-- **4-5**：基本可信度；存在一些权威元素
-- **6-7**：适合上下文的扎实权威性；在需要时使用可信来源
-- **8-9**：强有力的权威信号；有认可来源或展示的平台权威性支持
-- **10**：通过多个信号的综合权威性：广泛认可的专业能力、资历、原创研究或全面的权威支持
-
-### **Trustworthiness（1-10分）**
-
-**评分哲学**：可信度通过透明度、客观性、准确性和用户优先展示来赢得。
-
-**可信度证据可能包括**：
-- 平衡的多个视角展示
-- 清晰的属性和来源引用（当声明需要时）
-- 关于方法、关系或潜在偏见的透明度
-- 准确、可验证的信息
-- 专业展示和编辑
-- 最新的内容（或适当标注日期）
-- 以用户为中心（不欺骗或操纵）
-- 作者/组织的问责制
-
-**评分区间**：
-- **1-3**：误导、偏见或属性不良；缺乏透明度
-- **4-5**：一般可信但属性或透明度不一致
-- **6-7**：扎实的可信度；平衡且适当引用来源
-- **8-9**：高度可信；透明、客观、属性良好
-- **10**：顶级可信度；卓越的透明度、明确的问责制、公开承认局限性、主要来源、全程可验证
-
-## **评分校准指南**：
-
-为确保高质量文章获得适当分数：
-- **6.0-7.4 = 良好**：符合其类型E-E-A-T标准的扎实文章
-- **7.5-8.4 = 强**：超出典型标准的强文章
-- **8.5-9.4 = 很强**：展示跨因素高E-E-A-T的高质量文章
-- **9.5-10.0 = 优秀**：其类别中E-E-A-T原则的顶级执行
-
-## **必须的JSON输出格式**：
-
+必须返回完整JSON：
 {
   "articleContext": {
-    "type": "article_type",
-    "niche": "niche_context",
-    "purpose": "primary_purpose",
-    "targetAudience": "target_audience_description",
-    "contentLength": number,
-    "readingTime": number
+    "type": "文章类型",
+    "niche": "领域",
+    "purpose": "目的",
+    "targetAudience": "受众",
+    "contentLength": 实际长度,
+    "readingTime": "分钟数分钟"
   },
   "scores": {
     "experience": {
-      "score": number,
+      "score": 1-10的数字,
       "evidence": ["具体证据1", "具体证据2"],
-      "issues": ["问题1", "问题2"],
       "strengths": ["优势1", "优势2"],
+      "issues": ["问题1", "问题2"],
       "suggestions": ["改进建议1", "改进建议2"]
     },
-    "expertise": {
-      "score": number,
-      "evidence": ["具体证据1", "具体证据2"],
-      "issues": ["问题1", "问题2"],
-      "strengths": ["优势1", "优势2"],
-      "suggestions": ["改进建议1", "改进建议2"]
-    },
-    "authoritativeness": {
-      "score": number,
-      "evidence": ["具体证据1", "具体证据2"],
-      "issues": ["问题1", "问题2"],
-      "strengths": ["优势1", "优势2"],
-      "suggestions": ["改进建议1", "改进建议2"]
-    },
-    "trustworthiness": {
-      "score": number,
-      "evidence": ["具体证据1", "具体证据2"],
-      "issues": ["问题1", "问题2"],
-      "strengths": ["优势1", "优势2"],
-      "suggestions": ["改进建议1", "改进建议2"]
-    },
-    "overall": number
+    "expertise": {...同上格式...},
+    "authoritativeness": {...同上格式...},
+    "trustworthiness": {...同上格式...},
+    "overall": 1-10的总体分数
   },
   "analysis": {
-    "strengths": ["整体优势1", "整体优势2"],
-    "weaknesses": ["整体劣势1", "整体劣势2"],
+    "strengths": ["优势1", "优势2"],
+    "weaknesses": ["弱点1", "弱点2"],
     "opportunities": ["机会1", "机会2"]
   },
-  "summary": "详细评估总结",
+  "summary": "评估总结",
   "suggestions": [
     {
-      "priority": "high/medium/low",
-      "category": "Experience/Expertise/Authoritativeness/Trustworthiness",
-      "description": "具体改进描述",
-      "actionItems": ["行动项1", "行动项2"]
+      "priority": "high",
+      "category": "类别",
+      "description": "描述",
+      "actionItems": ["行动1", "行动2"]
     }
   ]
-}`;
+}
+
+重要：必须返回有效的、完整的JSON格式。`;
   }
 
   private buildUserPrompt(content: string, title?: string, author?: string): string {
     return `请评估以下内容的E-E-A-T表现：
 
 ${title ? `标题：${title}\n` : ''}${author ? `作者：${author}\n` : ''}内容：
-${content}
+${content.substring(0, 2500)}${content.length > 2500 ? '...' : ''}
 
 请根据内容质量进行1-10分评分，并返回完整的JSON格式评估结果。注意：
-1. 根据实际内容质量评分，避免给出默认分数
+1. 根据实际内容质量评分，不要都给5分
 2. 提供具体的证据和分析
-3. 确保返回格式正确的JSON
-4. 评估时要考虑文章的类型、领域和目的，进行上下文感知的评分`;
+3. 确保返回格式正确的JSON`;
   }
 
   private formatAIResult(aiResult: any, content: string, context?: ArticleContext): EEATResult {

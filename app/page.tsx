@@ -7,13 +7,12 @@ import { EEATResult } from "@/types/eeat"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { CheckCircle, Zap, Target, TrendingUp, AlertCircle, X } from "lucide-react"
+import { CheckCircle, Zap, Target, TrendingUp } from "lucide-react"
 
 export default function Home() {
   const [result, setResult] = useState<EEATResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showNotice, setShowNotice] = useState(true)
 
   const handleEvaluate = async (data: {
     content: string
@@ -56,32 +55,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      {/* 重要通知横幅 - 固定在顶部 */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-orange-50 to-yellow-50 border-b border-orange-200 shadow-md">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 animate-pulse" />
-              <div className="text-sm">
-                <span className="font-medium text-orange-800">重要提示：</span>
-                <span className="text-gray-700 ml-2">
-                  由于服务器限制，当前为精简版。我们将在一周内升级到完整版本，请持续关注！
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowNotice(false)}
-              className="text-gray-500 hover:text-gray-700 transition-colors p-1 hover:bg-orange-100 rounded"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 占位空间，避免内容被固定横幅遮挡 */}
-      <div className="h-16"></div>
-
       {/* Header */}
       <header className="border-b bg-white">
         <div className="container mx-auto px-4 py-6">
@@ -96,10 +69,10 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-sm px-3 py-1">
-                免费版本
+                完整版本
               </Badge>
               <Badge variant="secondary" className="text-xs">
-                精简版
+                AI驱动
               </Badge>
             </div>
           </div>
@@ -159,26 +132,6 @@ export default function Home() {
           {/* Evaluation Form */}
           <div className="max-w-4xl mx-auto">
             <EvaluationForm onEvaluate={handleEvaluate} loading={loading} />
-
-            {/* 当前限制说明 */}
-            <Card className="mt-6 border-orange-200">
-              <CardContent className="pt-6">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5" />
-                  <div className="flex-1">
-                    <h4 className="font-medium text-gray-900 mb-2">当前版本限制</h4>
-                    <ul className="text-sm text-gray-600 space-y-1">
-                      <li>• 内容长度限制：建议不超过 2500 字符</li>
-                      <li>• AI评估超时：复杂内容可能使用规则评估</li>
-                      <li>• 功能精简：专注核心 EEAT 评估功能</li>
-                    </ul>
-                    <p className="text-xs text-orange-600 mt-2 font-medium">
-                      完整版即将上线，敬请期待！
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
 
           {/* Features */}
