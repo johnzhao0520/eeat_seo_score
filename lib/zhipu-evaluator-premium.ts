@@ -139,12 +139,15 @@ export class ZhipuEvaluatorPremium {
       });
 
       let jsonContent = null;
+      let parsed = null;
 
+      // 如果包含markdown代码块，提取JSON内容
       const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
       if (jsonMatch) {
         jsonContent = jsonMatch[1];
       }
 
+      // 如果没有markdown代码块，尝试直接解析
       const trimmedContent = content.trim();
       if (!jsonContent && trimmedContent.startsWith('{') && trimmedContent.endsWith('}')) {
         jsonContent = trimmedContent;
@@ -152,23 +155,96 @@ export class ZhipuEvaluatorPremium {
 
       if (jsonContent) {
         try {
+          // 尝试修复JSON字符串
           let fixedJson = this.fixJsonString(jsonContent);
-          const parsed = JSON.parse(fixedJson);
-
-          logger.info("智谱AI Premium JSON解析成功", {
-            hasArticleContext: !!parsed.articleContext,
-            hasScores: !!parsed.scores,
-            hasAnalysis: !!parsed.analysis,
-            hasSuggestions: !!parsed.suggestions,
-            overallScore: parsed.scores?.overall
-          });
-          return parsed;
+          parsed = JSON.parse(fixedJson);
         } catch (parseError) {
-          logger.error("JSON解析失败", {
+          logger.error("智谱AI Premium JSON解析失败", {
             jsonContent: jsonContent.substring(0, 1000),
             parseError: parseError instanceof Error ? parseError.message : String(parseError)
           });
+          throw new Error("JSON解析失败");
         }
+      }
+
+      // 检查并修复返回的数据结构
+      if (parsed) {
+        // 如果AI返回的是 article.scores 格式，需要转换
+        if (parsed.article && parsed.article.scores) {
+          const articleScores = parsed.article.scores;
+          // 转换为我们期望的格式
+          parsed.scores = {
+            experience: {
+              score: articleScores.experience || 5,
+              evidence: ["需要更多具体证据"],
+              issues: [],
+              strengths: [],
+              suggestions: []
+            },
+            expertise: {
+              score: articleScores.expertise || 5,
+              evidence: ["需要更多专业证据"],
+              issues: [],
+              strengths: [],
+              suggestions: []
+            },
+            authoritativeness: {
+              score: articleScores.authoritativeness || 5,
+              evidence: ["需要更多权威性证据"],
+              issues: [],
+              strengths: [],
+              suggestions: []
+            },
+            trustworthiness: {
+              score: articleScores.trustworthiness || 5,
+              evidence: ["需要更多可信度证据"],
+              issues: [],
+              strengths: [],
+              suggestions: []
+            },
+            overall: articleScores.overall || 5
+          };
+          // 删除错误的格式
+          delete parsed.article;
+        }
+
+        // 确保scores结构正确
+        if (!parsed.scores) {
+          throw new Error("缺少scores字段");
+        }
+
+        // 确保每个维度都有完整的结构
+        ['experience', 'expertise', 'authoritativeness', 'trustworthiness'].forEach(dimension => {
+          if (!parsed.scores[dimension] || typeof parsed.scores[dimension] !== 'object') {
+            parsed.scores[dimension] = {
+              score: 5,
+              evidence: [],
+              issues: [],
+              strengths: [],
+              suggestions: []
+            };
+          } else if (typeof parsed.scores[dimension].score !== 'number') {
+            // 如果score不是数字，说明结构有问题
+            const score = Number(parsed.scores[dimension]);
+            parsed.scores[dimension] = {
+              score: isNaN(score) ? 5 : score,
+              evidence: [],
+              issues: [],
+              strengths: [],
+              suggestions: []
+            };
+          }
+        });
+
+        logger.info("智谱AI Premium JSON解析成功", {
+          hasArticleContext: !!parsed.articleContext,
+          hasScores: !!parsed.scores,
+          hasAnalysis: !!parsed.analysis,
+          hasSuggestions: !!parsed.suggestions,
+          overallScore: parsed.scores?.overall
+        });
+
+        return parsed;
       }
 
       throw new Error("无法解析AI响应为JSON格式");
@@ -272,15 +348,26 @@ export class ZhipuEvaluatorPremium {
   }
 
   private buildSystemPrompt(): string {
-    return `You are an expert E-E-A-T evaluator tasked with assessing articles based on Google's Experience, Expertise, Authoritativeness, and Trustworthiness principles.
+    return `你是专业的E-E-A-T评估专家，负责根据Google的Experience、Expertise、Authoritativeness和Trustworthiness原则评估文章。
 
-**Critical Instructions:**
+**最重要的要求：**
 
-1. **Output Format**: Provide ONLY valid JSON. No explanations, commentary, or code blocks (no \`\`\`). Start with { and end with }.
+1. **输出格式**：仅提供有效的JSON。不要解释、评论或代码块（不要\`\`\`）。以{开始，以}结束。
 
-2. **Consistency**: Apply the rubric systematically using the same interpretation across evaluations.
+2. **结构必须严格遵循以下格式**：
+   - articleContext（对象）
+   - scores（对象，包含4个子对象）
+   - analysis（对象）
+   - summary（字符串）
+   - suggestions（数组）
 
-3. **Context-Awareness**: Adapt expectations based on article type, niche, and purpose.
+3. **评分格式要求**：
+   - scores.experience 必须是包含 score、evidence、issues、strengths、suggestions 的对象
+   - scores.expertise 必须是包含 score、evidence、issues、strengths、suggestions 的对象
+   - scores.authoritativeness 必须是包含 score、evidence、issues、strengths、suggestions 的对象
+   - scores.trustworthiness 必须是包含 score、evidence、issues、strengths、suggestions 的对象
+   - 每个score必须是1-10的数字
+   - evidence、issues、strengths、suggestions都必须是字符串数组
 
 You are evaluating an article using Google's E-E-A-T principles. Your assessment must be objective, context-aware, and consistent.
 
@@ -424,7 +511,7 @@ To ensure high-quality articles receive appropriate scores:
 4. Compensatory scoring: Exceptional strength in some areas can balance moderate performance in others
 5. Context matters: A tutorial with great screenshots and detailed steps shows authority differently than a research article with citations
 
-## **Required JSON Output Format**:
+## **必须的JSON输出格式**：
 
 {
   "articleContext": {
@@ -435,38 +522,50 @@ To ensure high-quality articles receive appropriate scores:
     "contentLength": number,
     "readingTime": number
   },
-  "article": {
-    "scores": {
-      "experience": X,
-      "expertise": X,
-      "authoritativeness": X,
-      "trustworthiness": x
-    },
-    "overall": X
-  },
-  "analysis": {
+  "scores": {
     "experience": {
-      "assessment": "Detailed analysis here explaining the score based on rubric and context"
+      "score": 数字1-10,
+      "evidence": ["具体证据1", "具体证据2"],
+      "issues": ["问题1", "问题2"],
+      "strengths": ["优势1", "优势2"],
+      "suggestions": ["改进建议1", "改进建议2"]
     },
     "expertise": {
-      "assessment": "Detailed analysis here"
+      "score": 数字1-10,
+      "evidence": ["具体证据1", "具体证据2"],
+      "issues": ["问题1", "问题2"],
+      "strengths": ["优势1", "优势2"],
+      "suggestions": ["改进建议1", "改进建议2"]
     },
     "authoritativeness": {
-      "assessment": "Detailed analysis here"
+      "score": 数字1-10,
+      "evidence": ["具体证据1", "具体证据2"],
+      "issues": ["问题1", "问题2"],
+      "strengths": ["优势1", "优势2"],
+      "suggestions": ["改进建议1", "改进建议2"]
     },
     "trustworthiness": {
-      "assessment": "Detailed analysis here"
-    }
+      "score": 数字1-10,
+      "evidence": ["具体证据1", "具体证据2"],
+      "issues": ["问题1", "问题2"],
+      "strengths": ["优势1", "优势2"],
+      "suggestions": ["改进建议1", "改进建议2"]
+    },
+    "overall": 数字1-10
   },
-  "summary": [
-    {
-      "title": "Brief strength title",
-      "detail": "Explanation of this strength"
-    }
-  ],
+  "analysis": {
+    "strengths": ["整体优势1", "整体优势2"],
+    "weaknesses": ["整体劣势1", "整体劣势2"],
+    "opportunities": ["机会1", "机会2"]
+  },
+  "summary": "200-300字的详细总结",
   "suggestions": [
-    "Specific, actionable suggestion 1",
-    "Specific, actionable suggestion 2"
+    {
+      "priority": "high/medium/low",
+      "category": "Experience/Expertise/Authoritativeness/Trustworthiness",
+      "description": "具体改进描述",
+      "actionItems": ["行动项1", "行动项2"]
+    }
   ]
 }
 
@@ -490,11 +589,16 @@ To ensure <10% variation across multiple evaluations:
   }
 
   private buildUserPrompt(content: string, title?: string, author?: string): string {
-    let prompt = `${content}`;
+    let prompt = `请评估以下内容的E-E-A-T表现：
 
-    if (title || author) {
-      prompt = `${title ? `Title: ${title}\n` : ''}${author ? `Author: ${author}\n` : ''}${prompt}`;
-    }
+${title ? `标题：${title}\n` : ''}${author ? `作者：${author}\n` : ''}内容：
+${content}
+
+请严格按照系统提示中指定的JSON格式返回评估结果。特别注意：
+1. scores必须包含experience、expertise、authoritativeness、trustworthiness四个对象
+2. 每个评分对象必须包含score（数字）、evidence（数组）、issues（数组）、strengths（数组）、suggestions（数组）
+3. 不要使用article.scores格式，直接使用scores
+4. 确保返回完整的JSON，以{开始，以}结束，不要包含代码块`;
 
     return prompt;
   }
