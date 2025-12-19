@@ -45,7 +45,7 @@ export class ZhipuEvaluator {
 
       // 智能内容预处理
       const processedContent = this.preprocessContent(content);
-      const useEnhancedPrompt = processedContent.length <= 8000;
+      const useEnhancedPrompt = processedContent.length <= 5000;  // 降低阈值，确保使用标准版提示词
 
       const systemPrompt = useEnhancedPrompt
         ? this.buildEnhancedSystemPrompt()
@@ -64,7 +64,8 @@ export class ZhipuEvaluator {
       ];
 
       // 根据内容长度调整超时时间
-      const timeout = processedContent.length > 5000 ? 25000 : 20000;
+      // Vercel Pro 允许60秒，但我们需要留出缓冲时间
+      const timeout = processedContent.length > 5000 ? 35000 : 25000;
       const response = await this.makeZhipuRequest(messages, 6000, timeout);
 
       if (!response || !response.choices || response.choices.length === 0) {
@@ -92,16 +93,16 @@ export class ZhipuEvaluator {
 
   private preprocessContent(content: string): string {
     // 如果内容超过一定长度，进行智能截取
-    const maxLength = 10000;
+    const maxLength = 6000;  // 减少到6000字符，确保AI能及时响应
 
     if (content.length <= maxLength) {
       return content;
     }
 
-    // 保留开头、结尾和中间部分
-    const startLength = Math.floor(maxLength * 0.3);
-    const endLength = Math.floor(maxLength * 0.3);
-    const middleLength = maxLength - startLength - endLength;
+    // 保留开头、结尾和中间部分，减少截取的长度
+    const startLength = Math.floor(maxLength * 0.35);  // 35%
+    const endLength = Math.floor(maxLength * 0.25);   // 25%
+    const middleLength = maxLength - startLength - endLength;  // 40%
     const middleStart = Math.floor((content.length - middleLength) / 2);
 
     return (
