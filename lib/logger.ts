@@ -1,10 +1,21 @@
 import fs from 'fs'
 import path from 'path'
 
-// 创建日志目录
-const logDir = path.join(process.cwd(), 'logs')
-if (!fs.existsSync(logDir)) {
-  fs.mkdirSync(logDir, { recursive: true })
+// 检测是否在生产环境（Vercel）
+const isProduction = process.env.NODE_ENV === 'production'
+const isVercel = process.env.VERCEL === '1'
+
+// 只在非生产环境创建日志目录
+let logDir: string | null = null
+if (!isProduction && !isVercel) {
+  logDir = path.join(process.cwd(), 'logs')
+  try {
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true })
+    }
+  } catch (error) {
+    // 忽略目录创建错误
+  }
 }
 
 // 日志函数
@@ -17,17 +28,19 @@ export function writeLog(type: 'info' | 'error' | 'warn', message: string, data?
     ...(data && { data })
   }
 
-  // 写入到日志文件
-  const logFile = path.join(logDir, `eeat-${new Date().toISOString().split('T')[0]}.log`)
-  const logLine = JSON.stringify(logEntry) + '\n'
+  // 只在非生产环境且日志目录存在时写入文件
+  if (logDir && !isProduction && !isVercel) {
+    const logFile = path.join(logDir, `eeat-${new Date().toISOString().split('T')[0]}.log`)
+    const logLine = JSON.stringify(logEntry) + '\n'
 
-  try {
-    fs.appendFileSync(logFile, logLine)
-  } catch (error) {
-    console.error('无法写入日志:', error)
+    try {
+      fs.appendFileSync(logFile, logLine)
+    } catch (error) {
+      // 静默处理文件写入错误
+    }
   }
 
-  // 同时输出到控制台
+  // 始终输出到控制台
   const prefix = {
     info: '[INFO]',
     error: '[ERROR]',
