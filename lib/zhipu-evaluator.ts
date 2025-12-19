@@ -179,9 +179,21 @@ export class ZhipuEvaluator {
       throw new Error("无法解析AI响应为JSON格式");
     } catch (error) {
       logger.error("解析智谱AI响应失败", {
-        contentPreview: content.substring(0, 500),
+        contentPreview: content.substring(0, 1000),
+        contentLength: content.length,
         error: error instanceof Error ? error.message : String(error)
       });
+
+      // 尝试使用简单的解析逻辑
+      try {
+        // 如果JSON解析失败，尝试提取分数
+        const scoreMatch = content.match(/"score":\s*(\d+)/g);
+        if (scoreMatch && scoreMatch.length > 0) {
+          logger.info("尝试从响应中提取分数", { scoreMatches: scoreMatch });
+        }
+      } catch (e) {
+        // 忽略
+      }
 
       // 返回默认结构，防止系统崩溃
       return this.getDefaultAIResult();
@@ -283,48 +295,66 @@ export class ZhipuEvaluator {
   }
 
   private buildSystemPrompt(): string {
-    return `你是E-E-A-T评估专家。评估内容并返回JSON格式结果。
+    return `你是E-E-A-T评估专家。请评估给定内容并严格按JSON格式返回结果。
 
-评估维度：
-- Experience（经验）：第一手经验、实际案例、数据指标
-- Expertise（专业）：信息准确、深度见解、时效性
-- Authoritativeness（权威）：可信来源、作者资质、原创研究
-- Trustworthiness（可信）：内容客观、信息透明、可验证
+评分标准（1-10分）：
+- Experience：是否有第一手经验、案例研究、数据支撑
+- Expertise：信息准确性、专业深度、时效性
+- Authoritativeness：可信来源、作者资质、引用质量
+- Trustworthiness：内容客观性、透明度、可验证性
 
-输出JSON格式：
+必须返回完整JSON：
 {
   "articleContext": {
     "type": "文章类型",
     "niche": "领域",
     "purpose": "目的",
     "targetAudience": "受众",
-    "contentLength": 数字,
-    "readingTime": "时间"
+    "contentLength": 实际长度,
+    "readingTime": "分钟数分钟"
   },
   "scores": {
-    "experience": {"score": 1-10, "evidence": [], "strengths": [], "issues": [], "suggestions": []},
-    "expertise": {"score": 1-10, "evidence": [], "strengths": [], "issues": [], "suggestions": []},
-    "authoritativeness": {"score": 1-10, "evidence": [], "strengths": [], "issues": [], "suggestions": []},
-    "trustworthiness": {"score": 1-10, "evidence": [], "strengths": [], "issues": [], "suggestions": []},
-    "overall": 1-10
+    "experience": {
+      "score": 1-10的数字,
+      "evidence": ["具体证据1", "具体证据2"],
+      "strengths": ["优势1", "优势2"],
+      "issues": ["问题1", "问题2"],
+      "suggestions": ["改进建议1", "改进建议2"]
+    },
+    "expertise": {...同上格式...},
+    "authoritativeness": {...同上格式...},
+    "trustworthiness": {...同上格式...},
+    "overall": 1-10的总体分数
   },
   "analysis": {
-    "strengths": [],
-    "weaknesses": [],
-    "opportunities": []
+    "strengths": ["优势1", "优势2"],
+    "weaknesses": ["弱点1", "弱点2"],
+    "opportunities": ["机会1", "机会2"]
   },
-  "summary": "总结",
-  "suggestions": []
-}`;
+  "summary": "评估总结",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "类别",
+      "description": "描述",
+      "actionItems": ["行动1", "行动2"]
+    }
+  ]
+}
+
+重要：必须返回有效的、完整的JSON格式。`;
   }
 
   private buildUserPrompt(content: string, title?: string, author?: string): string {
-    return `评估内容：
-${title ? `标题：${title}` : ''}
-${author ? `作者：${author}` : ''}
-内容：${content.substring(0, 3000)}${content.length > 3000 ? '...' : ''}
+    return `请评估以下内容的E-E-A-T表现：
 
-请按JSON格式返回EEAT评估结果。`;
+${title ? `标题：${title}\n` : ''}${author ? `作者：${author}\n` : ''}内容：
+${content.substring(0, 2500)}${content.length > 2500 ? '...' : ''}
+
+请根据内容质量进行1-10分评分，并返回完整的JSON格式评估结果。注意：
+1. 根据实际内容质量评分，不要都给5分
+2. 提供具体的证据和分析
+3. 确保返回格式正确的JSON`;
   }
 
   private formatAIResult(aiResult: any, content: string, context?: ArticleContext): EEATResult {
