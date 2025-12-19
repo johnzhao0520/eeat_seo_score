@@ -56,30 +56,31 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      {/* 重要通知横幅 */}
-      {showNotice && (
-        <div className="bg-gradient-to-r from-orange-50 to-yellow-50 border-b border-orange-200">
-          <div className="container mx-auto px-4 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0" />
-                <div className="text-sm">
-                  <span className="font-medium text-orange-800">重要提示：</span>
-                  <span className="text-gray-700 ml-2">
-                    由于服务器限制，当前为精简版。我们将在一周内升级到完整版本，请持续关注！
-                  </span>
-                </div>
+      {/* 重要通知横幅 - 固定在顶部 */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-orange-50 to-yellow-50 border-b border-orange-200 shadow-md">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 animate-pulse" />
+              <div className="text-sm">
+                <span className="font-medium text-orange-800">重要提示：</span>
+                <span className="text-gray-700 ml-2">
+                  由于服务器限制，当前为精简版。我们将在一周内升级到完整版本，请持续关注！
+                </span>
               </div>
-              <button
-                onClick={() => setShowNotice(false)}
-                className="text-gray-500 hover:text-gray-700 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
+            <button
+              onClick={() => setShowNotice(false)}
+              className="text-gray-500 hover:text-gray-700 transition-colors p-1 hover:bg-orange-100 rounded"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
-      )}
+      </div>
+
+      {/* 占位空间，避免内容被固定横幅遮挡 */}
+      <div className="h-16"></div>
 
       {/* Header */}
       <header className="border-b bg-white">
