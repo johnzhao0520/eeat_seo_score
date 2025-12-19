@@ -1,4 +1,4 @@
-import { EEATResult, ArticleContext, ScoreDetails } from "@/types/eeat";
+import { EEATResult, ArticleContext, ScoreDetails, EEATScores } from "@/types/eeat";
 import { logger } from "./logger";
 
 interface ZhipuMessage {
@@ -19,6 +19,11 @@ interface ZhipuResponse {
   };
 }
 
+interface EvaluateAIOptions {
+  useChunked?: boolean;
+  maxTimeoutMs?: number;
+}
+
 export class ZhipuEvaluatorEnhancedV2 {
   private apiKey: string;
   private baseUrl: string = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
@@ -34,9 +39,15 @@ export class ZhipuEvaluatorEnhancedV2 {
     content: string,
     title?: string,
     author?: string,
-    context?: ArticleContext
+    context?: ArticleContext,
+    options: EvaluateAIOptions = {}
   ): Promise<EEATResult | null> {
     try {
+      const shouldChunk = this.shouldUseChunked(content, options.useChunked);
+      if (shouldChunk) {
+        return await this.evaluateWithAIChunked(content, title, author, context, options);
+      }
+
       // 对于长内容进行智能截取，保留更多关键信息
       const processedContent = this.preprocessContent(content, 6000); // 增加到6000字符
       const systemPrompt = this.buildEnhancedSystemPrompt();
@@ -56,7 +67,12 @@ export class ZhipuEvaluatorEnhancedV2 {
       ];
 
       // Enhanced V2 使用50秒超时，充分利用Vercel Pro
-      const response = await this.makeZhipuRequest(messages, 8000, 50000);
+      const response = await this.makeZhipuRequest(
+        messages,
+        8000,
+        this.getAdaptiveTimeout(content.length, 8000, options.maxTimeoutMs, 50000),
+        2
+      );
 
       if (!response || !response.choices || response.choices.length === 0) {
         throw new Error("智谱AI返回了空响应");
@@ -89,46 +105,444 @@ export class ZhipuEvaluatorEnhancedV2 {
     }
   }
 
+  private shouldUseChunked(content: string, requested?: boolean): boolean {
+    if (requested !== undefined) {
+      return requested;
+    }
+    if (process.env.ZHIPU_FORCE_CHUNKED === "true") {
+      return true;
+    }
+    return content.length > 3500;
+  }
+
+  private async evaluateWithAIChunked(
+    content: string,
+    title?: string,
+    author?: string,
+    context?: ArticleContext,
+    options: EvaluateAIOptions = {}
+  ): Promise<EEATResult | null> {
+    const chunks = this.splitContent(content, 2600);
+    if (chunks.length === 0) {
+      return null;
+    }
+
+    const chunkDelayMs = Number(process.env.ZHIPU_CHUNK_DELAY_MS || "200");
+
+    logger.info("智谱AI Enhanced V2 分段评估开始", {
+      chunkCount: chunks.length,
+      contentLength: content.length
+    });
+
+    const chunkResults: EEATResult[] = [];
+
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunk = chunks[index];
+      const chunkSystemPrompt = this.buildChunkSystemPrompt();
+      const chunkUserPrompt = this.buildChunkUserPrompt(chunk, index + 1, chunks.length, title, author);
+      const messages: ZhipuMessage[] = [
+        { role: "system", content: chunkSystemPrompt },
+        { role: "user", content: chunkUserPrompt }
+      ];
+
+      try {
+        const response = await this.makeZhipuRequest(
+          messages,
+          1500,
+          this.getAdaptiveTimeout(chunk.length, 1500, options.maxTimeoutMs, 25000),
+          2
+        );
+
+        if (!response || !response.choices || response.choices.length === 0) {
+          throw new Error("智谱AI分段返回空响应");
+        }
+
+        const aiResult = this.parseAIResponse(response.choices[0].message.content);
+        const formatted = this.formatEnhancedAIResult(aiResult, chunk, title, author);
+        chunkResults.push(formatted);
+      } catch (error) {
+        logger.warn("智谱AI分段评估失败", {
+          error: error instanceof Error ? error.message : String(error),
+          chunkIndex: index + 1,
+          chunkCount: chunks.length
+        });
+      }
+
+      if (chunkDelayMs > 0 && index < chunks.length - 1) {
+        await this.sleep(chunkDelayMs);
+      }
+    }
+
+    if (chunkResults.length === 0) {
+      return null;
+    }
+
+    const aggregatedScores = this.aggregateScores(chunkResults);
+    const aggregatedAnalysis = this.aggregateAnalysis(chunkResults);
+    const aggregatedSuggestions = this.aggregateSuggestions(chunkResults);
+
+    const aggregation = await this.requestAggregationSummary(
+      chunkResults,
+      title,
+      author,
+      aggregatedScores,
+      aggregatedAnalysis,
+      options
+    );
+
+    const aiResult = {
+      articleContext: context,
+      scores: aggregatedScores,
+      analysis: aggregatedAnalysis,
+      summary: aggregation.summary,
+      suggestions: aggregation.suggestions.length > 0 ? aggregation.suggestions : aggregatedSuggestions
+    };
+
+    logger.info("智谱AI Enhanced V2 分段评估完成", {
+      chunkCount: chunks.length,
+      overall: aggregatedScores.overall
+    });
+
+    return this.formatEnhancedAIResult(aiResult, content, title, author);
+  }
+
   private async makeZhipuRequest(
     messages: ZhipuMessage[],
     maxTokens: number = 8000,
-    timeout: number = 50000
+    timeout: number = 50000,
+    retries: number = 1
   ): Promise<ZhipuResponse | null> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const attempts = Math.max(1, retries);
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      try {
+        const response = await fetch(this.baseUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "glm-4.6",
+            messages: messages,
+            max_tokens: maxTokens,
+            temperature: 0.2, // 降低温度以获得更一致的结果
+            stream: false,
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`智谱AI请求失败: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (!content || !content.trim()) {
+          throw new Error("智谱AI返回空内容");
+        }
+        return data;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        const message = error instanceof Error ? error.message : String(error);
+        if (error instanceof Error && error.name === "AbortError") {
+          if (attempt >= attempts) {
+            throw new Error(`智谱AI请求超时（${timeout}ms）`);
+          }
+        }
+
+        if (attempt < attempts) {
+          logger.warn("智谱AI请求失败，准备重试", {
+            attempt,
+            attempts,
+            error: message
+          });
+          await this.sleep(500 * attempt);
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    return null;
+  }
+
+  private getAdaptiveTimeout(
+    contentLength: number,
+    maxTokens: number,
+    requestedTimeout?: number,
+    defaultTimeout: number = 50000
+  ): number {
+    const maxTimeout = Number(process.env.ZHIPU_MAX_TIMEOUT_MS || "120000");
+    if (requestedTimeout) {
+      return Math.min(requestedTimeout, maxTimeout);
+    }
+
+    const tokenFactor = Math.ceil(maxTokens / 1000) * 6000;
+    const lengthFactor = Math.ceil(contentLength / 1000) * 4000;
+    const adaptive = defaultTimeout + tokenFactor + lengthFactor;
+
+    return Math.min(Math.max(adaptive, defaultTimeout), maxTimeout);
+  }
+
+  private splitContent(content: string, maxChunkLength: number): string[] {
+    if (content.length <= maxChunkLength) {
+      return [content];
+    }
+
+    const paragraphs = content.split(/\n\s*\n/);
+    const chunks: string[] = [];
+    let buffer = "";
+
+    for (const paragraph of paragraphs) {
+      const next = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
+      if (next.length <= maxChunkLength) {
+        buffer = next;
+        continue;
+      }
+
+      if (buffer) {
+        chunks.push(buffer);
+      }
+      if (paragraph.length > maxChunkLength) {
+        for (let i = 0; i < paragraph.length; i += maxChunkLength) {
+          chunks.push(paragraph.slice(i, i + maxChunkLength));
+        }
+        buffer = "";
+      } else {
+        buffer = paragraph;
+      }
+    }
+
+    if (buffer) {
+      chunks.push(buffer);
+    }
+
+    return chunks.filter(chunk => chunk.trim().length > 0);
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private buildChunkSystemPrompt(): string {
+    return `你是E-E-A-T评估专家，需要对文章片段进行局部评估。
+
+【要求】
+1. 只基于片段内容评分，给出具体证据
+2. 每个维度至少给出1条evidence
+3. JSON格式返回，字段与完整评估一致
+4. summary只需简短概述片段要点（1-2句）
+
+返回完整JSON结构。`;
+  }
+
+  private buildChunkUserPrompt(
+    content: string,
+    index: number,
+    total: number,
+    title?: string,
+    author?: string
+  ): string {
+    return `请评估以下文章片段（第${index}/${total}段）：
+
+${title ? `标题：${title}\n` : ""}${author ? `作者：${author}\n` : ""}内容：
+${content}
+
+请严格输出JSON。`;
+  }
+
+  private async requestAggregationSummary(
+    chunkResults: EEATResult[],
+    title: string | undefined,
+    author: string | undefined,
+    aggregatedScores: EEATScores,
+    aggregatedAnalysis: { strengths: string[]; weaknesses: string[]; opportunities: string[] },
+    options: EvaluateAIOptions
+  ): Promise<{ summary: string; suggestions: EEATResult["suggestions"] }> {
+    const summaries = chunkResults.map((result, index) => {
+      return `片段${index + 1}总结：${result.summary}`;
+    });
+
+    const prompt = `请基于以下分段评估结果生成最终总结与建议（不要重新评分）。
+
+${title ? `标题：${title}\n` : ""}${author ? `作者：${author}\n` : ""}
+综合分数：
+Experience=${aggregatedScores.experience.score}
+Expertise=${aggregatedScores.expertise.score}
+Authoritativeness=${aggregatedScores.authoritativeness.score}
+Trustworthiness=${aggregatedScores.trustworthiness.score}
+
+整体优势：${aggregatedAnalysis.strengths.join("；")}
+整体不足：${aggregatedAnalysis.weaknesses.join("；")}
+改进机会：${aggregatedAnalysis.opportunities.join("；")}
+
+分段摘要：
+${summaries.join("\n")}
+
+请输出JSON格式：
+{
+  "summary": "200-300字总结",
+  "suggestions": [
+    {
+      "priority": "high|medium|low",
+      "category": "分类",
+      "description": "建议",
+      "actionItems": ["行动1", "行动2"]
+    }
+  ]
+}`;
+
+    const messages: ZhipuMessage[] = [
+      { role: "system", content: "你是评估汇总助手，负责基于分段结果输出最终总结与建议。" },
+      { role: "user", content: prompt }
+    ];
 
     try {
-      const response = await fetch(this.baseUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "glm-4.6",
-          messages: messages,
-          max_tokens: maxTokens,
-          temperature: 0.2, // 降低温度以获得更一致的结果
-          stream: false,
-        }),
-        signal: controller.signal,
-      });
+      const response = await this.makeZhipuRequest(
+        messages,
+        1200,
+        this.getAdaptiveTimeout(prompt.length, 1200, options.maxTimeoutMs, 25000),
+        2
+      );
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`智谱AI请求失败: ${response.status} ${response.statusText}`);
+      if (!response || !response.choices || response.choices.length === 0) {
+        throw new Error("聚合总结返回空响应");
       }
 
-      const data = await response.json();
-      return data;
+      const aggregation = this.parseAggregationResponse(response.choices[0].message.content);
+      return aggregation;
     } catch (error) {
-      clearTimeout(timeoutId);
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(`智谱AI请求超时（${timeout}ms）`);
-      }
-      throw error;
+      logger.warn("聚合总结失败，使用本地总结", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return {
+        summary: this.generateSummary(chunkResults.map(result => result.summary).join("\n")),
+        suggestions: []
+      };
     }
+  }
+
+  private parseAggregationResponse(content: string): {
+    summary: string;
+    suggestions: EEATResult["suggestions"];
+  } {
+    let jsonContent = null;
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      jsonContent = jsonMatch[1];
+    } else if (content.trim().startsWith("{") && content.trim().endsWith("}")) {
+      jsonContent = content.trim();
+    }
+
+    if (jsonContent) {
+      try {
+        const fixedJson = this.fixJsonString(jsonContent);
+        const parsed = JSON.parse(fixedJson);
+        return {
+          summary: typeof parsed.summary === "string" ? parsed.summary : "",
+          suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+        };
+      } catch (error) {
+        logger.warn("聚合总结JSON解析失败", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
+    return { summary: "", suggestions: [] };
+  }
+
+  private aggregateScores(results: EEATResult[]): EEATScores {
+    const average = (values: number[]) => {
+      if (values.length === 0) return 0;
+      return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
+    };
+
+    const mergeStrings = (values: string[], limit: number) => {
+      const seen = new Set<string>();
+      const merged: string[] = [];
+      for (const value of values) {
+        const trimmed = value.trim();
+        if (!trimmed || seen.has(trimmed)) continue;
+        seen.add(trimmed);
+        merged.push(trimmed);
+        if (merged.length >= limit) break;
+      }
+      return merged;
+    };
+
+    const buildScore = (dimension: keyof EEATScores): ScoreDetails => {
+      const scores = results.map(result => result.scores[dimension as keyof EEATScores] as ScoreDetails);
+      const numericScores = scores.map(score => score.score);
+      return {
+        score: average(numericScores),
+        evidence: mergeStrings(scores.flatMap(score => score.evidence || []), 8),
+        issues: mergeStrings(scores.flatMap(score => score.issues || []), 6),
+        strengths: mergeStrings(scores.flatMap(score => score.strengths || []), 6),
+        suggestions: mergeStrings(scores.flatMap(score => score.suggestions || []), 6)
+      };
+    };
+
+    const experience = buildScore("experience");
+    const expertise = buildScore("expertise");
+    const authoritativeness = buildScore("authoritativeness");
+    const trustworthiness = buildScore("trustworthiness");
+
+    const overall = average([experience.score, expertise.score, authoritativeness.score, trustworthiness.score]);
+
+    return {
+      experience,
+      expertise,
+      authoritativeness,
+      trustworthiness,
+      overall
+    };
+  }
+
+  private aggregateAnalysis(results: EEATResult[]): {
+    strengths: string[];
+    weaknesses: string[];
+    opportunities: string[];
+  } {
+    const mergeStrings = (values: string[], limit: number) => {
+      const seen = new Set<string>();
+      const merged: string[] = [];
+      for (const value of values) {
+        const trimmed = value.trim();
+        if (!trimmed || seen.has(trimmed)) continue;
+        seen.add(trimmed);
+        merged.push(trimmed);
+        if (merged.length >= limit) break;
+      }
+      return merged;
+    };
+
+    return {
+      strengths: mergeStrings(results.flatMap(result => result.analysis.strengths || []), 8),
+      weaknesses: mergeStrings(results.flatMap(result => result.analysis.weaknesses || []), 8),
+      opportunities: mergeStrings(results.flatMap(result => result.analysis.opportunities || []), 8)
+    };
+  }
+
+  private aggregateSuggestions(results: EEATResult[]): EEATResult["suggestions"] {
+    const suggestions = results.flatMap(result => result.suggestions || []);
+    const seen = new Set<string>();
+    const merged: EEATResult["suggestions"] = [];
+    for (const suggestion of suggestions) {
+      const key = `${suggestion.category}-${suggestion.description}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(suggestion);
+      if (merged.length >= 6) break;
+    }
+    return merged;
   }
 
   private preprocessContent(content: string, maxLength: number): string {
