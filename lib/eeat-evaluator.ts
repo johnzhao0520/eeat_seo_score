@@ -1,7 +1,7 @@
 import { ArticleContext, EEATResult, ScoreDetails, EEATScores } from "@/types/eeat";
 import { calculateOverallScore } from "./utils";
 import { AIEvaluatorEnhanced } from "./ai-evaluator-enhanced";
-import { ZhipuEvaluator } from "./zhipu-evaluator-premium";
+import { ZhipuEvaluatorPremium } from "./zhipu-evaluator-premium";
 
 interface EvaluateOptions {
   useAI?: boolean;
@@ -13,12 +13,12 @@ interface EvaluateOptions {
 export class EEATEvaluator {
   private articleContext: ArticleContext | null = null;
   private openaiEvaluator: AIEvaluatorEnhanced | null = null;
-  private zhipuEvaluator: ZhipuEvaluator | null = null;
+  private zhipuEvaluator: ZhipuEvaluatorPremium | null = null;
 
   constructor(options?: { zhipuApiKey?: string; openaiApiKey?: string }) {
     // 优先使用智谱AI（更经济）
     if (options?.zhipuApiKey) {
-      this.zhipuEvaluator = new ZhipuEvaluator(options.zhipuApiKey);
+      this.zhipuEvaluator = new ZhipuEvaluatorPremium(options.zhipuApiKey);
     }
     // OpenAI作为备选
     if (options?.openaiApiKey) {
