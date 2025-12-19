@@ -47,6 +47,7 @@ export interface EvaluationRequest {
   author?: string;
   useAI?: boolean;
   useOpenAI?: boolean;
+  useChunked?: boolean;
 }
 
 export interface BatchEvaluationRequest {
