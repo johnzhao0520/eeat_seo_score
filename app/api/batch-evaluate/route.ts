@@ -37,7 +37,9 @@ export async function POST(request: NextRequest) {
     })
     const results = []
 
-    for (const article of body.articles) {
+    for (let index = 0; index < body.articles.length; index++) {
+      const article = body.articles[index];
+
       if (!article.content || article.content.trim().length < 50) {
         continue
       }
@@ -48,8 +50,7 @@ export async function POST(request: NextRequest) {
           article.title,
           article.author,
           {
-            useAI: body.useAI || false,
-            useOpenAI: body.useOpenAI || false,
+            useAI: body.useAI || false
           }
         )
         results.push(result)
