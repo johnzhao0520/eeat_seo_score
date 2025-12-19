@@ -658,17 +658,17 @@ ${content}
         overall: Math.max(1, Math.min(10, overall))
       },
       analysis: {
-        strengths: aiResult.summary?.filter((s: any) => s.title)?.map((s: any) => s.detail) || [],
-        weaknesses: [],  // 原始格式没有weaknesses
-        opportunities: aiResult.suggestions || []
+        strengths: aiResult.analysis?.strengths || [],
+        weaknesses: aiResult.analysis?.weaknesses || [],
+        opportunities: aiResult.analysis?.opportunities || []
       },
-      summary: aiResult.summary?.map((s: any) => s.detail).join('; ') || '基于EEAT标准的评估完成。',
-      suggestions: aiResult.suggestions?.map((s: string, index: number) => ({
-        priority: index === 0 ? 'high' : index === 1 ? 'medium' : 'low',
-        category: '综合',
-        description: s,
-        actionItems: [s]
-      })) || []
+      summary: typeof aiResult.summary === 'string' ? aiResult.summary : '基于EEAT标准的评估完成。',
+      suggestions: (aiResult.suggestions || []).map((s: any) => ({
+        priority: ['high', 'medium', 'low'].includes(s.priority) ? s.priority : 'medium',
+        category: s.category || '综合',
+        description: s.description || '改进建议',
+        actionItems: Array.isArray(s.actionItems) ? s.actionItems : [s.description || '采取行动']
+      }))
     };
   }
 
