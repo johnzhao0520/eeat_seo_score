@@ -51,7 +51,7 @@ export class ZhipuEvaluator {
         { role: "user", content: userPrompt }
       ];
 
-      const response = await this.makeZhipuRequest(messages, 6000); // 增加到6000 tokens以支持完整响应
+      const response = await this.makeZhipuRequest(messages, 2000); // 限制tokens以加快响应速度
 
       if (!response || !response.choices || response.choices.length === 0) {
         throw new Error("智谱AI返回了空响应");
@@ -76,13 +76,13 @@ export class ZhipuEvaluator {
     }
   }
 
-  private async makeZhipuRequest(messages: ZhipuMessage[], maxTokens: number = 3500, retries: number = 2): Promise<ZhipuResponse> {
+  private async makeZhipuRequest(messages: ZhipuMessage[], maxTokens: number = 3500, retries: number = 1): Promise<ZhipuResponse> {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         logger.info(`智谱AI请求尝试 ${attempt}/${retries}`);
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2分钟超时
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒超时，为Vercel 10秒限制预留时间
 
         const response = await fetch(this.baseUrl, {
           method: "POST",
@@ -118,7 +118,7 @@ export class ZhipuEvaluator {
         }
 
         // 等待一段时间再重试
-        await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
       }
     }
 
@@ -283,119 +283,48 @@ export class ZhipuEvaluator {
   }
 
   private buildSystemPrompt(): string {
-    return `你是一位专业的E-E-A-T（Experience, Expertise, Authoritativeness, Trustworthiness）内容评估专家。
+    return `你是E-E-A-T评估专家。评估内容并返回JSON格式结果。
 
-**重要要求**：
-1. 所有输出必须使用中文
-2. 深度理解内容质量
-3. 提供专业的评估建议
-4. 严格按照JSON格式输出
+评估维度：
+- Experience（经验）：第一手经验、实际案例、数据指标
+- Expertise（专业）：信息准确、深度见解、时效性
+- Authoritativeness（权威）：可信来源、作者资质、原创研究
+- Trustworthiness（可信）：内容客观、信息透明、可验证
 
-**评估标准（1-10分制）**：
-
-**Experience（经验）**：
-- 第一手经验和案例研究
-- 详细的操作步骤和流程
-- 具体数据和指标
-- 实践见解和经验分享
-
-**Expertise（专业知识）**：
-- 信息准确性和时效性
-- 深度解释和专业见解
-- 对复杂性的理解
-- 行业发展趋势认知
-
-**Authoritativeness（权威性）**：
-- 可信来源和引用
-- 作者资质和背景
-- 原创研究和数据
-- 行业认可和权威背书
-
-**Trustworthiness（可信度）**：
-- 内容平衡性和客观性
-- 信息透明度和可验证性
-- 专业编辑和更新频率
-- 避免误导性表述
-
-**输出格式要求**：
-请严格按以下JSON格式输出，所有文本内容必须使用中文：
-
+输出JSON格式：
 {
   "articleContext": {
-    "type": "文章类型（中文）",
-    "niche": "利基市场（中文）",
-    "purpose": "主要目的（中文）",
-    "targetAudience": "目标受众（中文）",
-    "contentLength": 内容长度（数字）,
-    "readingTime": "阅读时间（中文）"
+    "type": "文章类型",
+    "niche": "领域",
+    "purpose": "目的",
+    "targetAudience": "受众",
+    "contentLength": 数字,
+    "readingTime": "时间"
   },
   "scores": {
-    "experience": {
-      "score": 分数(1-10),
-      "evidence": ["证据1（中文）", "证据2（中文）"],
-      "strengths": ["优势1（中文）", "优势2（中文）"],
-      "issues": ["问题1（中文）", "问题2（中文）"],
-      "suggestions": ["建议1（中文）", "建议2（中文）"]
-    },
-    "expertise": {
-      "score": 分数(1-10),
-      "evidence": ["证据1（中文）", "证据2（中文）"],
-      "strengths": ["优势1（中文）", "优势2（中文）"],
-      "issues": ["问题1（中文）", "问题2（中文）"],
-      "suggestions": ["建议1（中文）", "建议2（中文）"]
-    },
-    "authoritativeness": {
-      "score": 分数(1-10),
-      "evidence": ["证据1（中文）", "证据2（中文）"],
-      "strengths": ["优势1（中文）", "优势2（中文）"],
-      "issues": ["问题1（中文）", "问题2（中文）"],
-      "suggestions": ["建议1（中文）", "建议2（中文）"]
-    },
-    "trustworthiness": {
-      "score": 分数(1-10),
-      "evidence": ["证据1（中文）", "证据2（中文）"],
-      "strengths": ["优势1（中文）", "优势2（中文）"],
-      "issues": ["问题1（中文）", "问题2（中文）"],
-      "suggestions": ["建议1（中文）", "建议2（中文）"]
-    },
-    "overall": 总体分数(1-10)
+    "experience": {"score": 1-10, "evidence": [], "strengths": [], "issues": [], "suggestions": []},
+    "expertise": {"score": 1-10, "evidence": [], "strengths": [], "issues": [], "suggestions": []},
+    "authoritativeness": {"score": 1-10, "evidence": [], "strengths": [], "issues": [], "suggestions": []},
+    "trustworthiness": {"score": 1-10, "evidence": [], "strengths": [], "issues": [], "suggestions": []},
+    "overall": 1-10
   },
   "analysis": {
-    "strengths": ["整体优势1（中文）", "整体优势2（中文）"],
-    "weaknesses": ["整体弱点1（中文）", "整体弱点2（中文）"],
-    "opportunities": ["改进机会1（中文）", "改进机会2（中文）"]
+    "strengths": [],
+    "weaknesses": [],
+    "opportunities": []
   },
-  "summary": "评估总结（中文）",
-  "suggestions": [
-    {
-      "priority": "high/medium/low",
-      "category": "Experience/Expertise/Authoritativeness/Trustworthiness",
-      "description": "改进建议描述（中文）",
-      "actionItems": ["具体行动1（中文）", "具体行动2（中文）"]
-    }
-  ]
-}
-
-注意：所有文本字段必须使用中文，除了数字和优先级字段。`;
+  "summary": "总结",
+  "suggestions": []
+}`;
   }
 
   private buildUserPrompt(content: string, title?: string, author?: string): string {
-    return `请评估以下内容的E-E-A-T表现：
+    return `评估内容：
+${title ? `标题：${title}` : ''}
+${author ? `作者：${author}` : ''}
+内容：${content.substring(0, 3000)}${content.length > 3000 ? '...' : ''}
 
-${title ? `标题：${title}\n` : ''}${author ? `作者：${author}\n` : ''}内容：
----
-${content}
----
-
-请基于上述E-E-A-T标准进行专业评估，并提供详细的分析和建议。
-
-**重要提醒**：
-- 必须使用中文进行所有分析和建议
-- 严格按照JSON格式输出
-- 所有文本字段必须使用中文
-- 确保评估结果专业、详细、有深度
-
-评估完成后，请用中文总结内容的整体质量水平和改进方向。`;
+请按JSON格式返回EEAT评估结果。`;
   }
 
   private formatAIResult(aiResult: any, content: string, context?: ArticleContext): EEATResult {
