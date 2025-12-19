@@ -1,7 +1,7 @@
 import { ArticleContext, EEATResult, ScoreDetails, EEATScores } from "@/types/eeat";
 import { calculateOverallScore } from "./utils";
 import { AIEvaluatorEnhanced } from "./ai-evaluator-enhanced";
-import { ZhipuEvaluator } from "./zhipu-evaluator-enhanced";
+import { ZhipuEvaluator } from "./zhipu-evaluator-adaptive";
 
 interface EvaluateOptions {
   useAI?: boolean;
