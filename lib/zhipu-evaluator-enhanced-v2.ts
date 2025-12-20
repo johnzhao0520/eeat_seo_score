@@ -122,7 +122,7 @@ export class ZhipuEvaluatorEnhancedV2 {
     context?: ArticleContext,
     options: EvaluateAIOptions = {}
   ): Promise<EEATResult | null> {
-    const chunks = this.splitContent(content, 2600);
+    const chunks = this.splitContent(content, 3200);
     if (chunks.length === 0) {
       return null;
     }
