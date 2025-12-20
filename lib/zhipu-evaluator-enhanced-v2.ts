@@ -743,6 +743,68 @@ ${contextInfo}
       return raw;
     }
 
+    if (raw?.evaluation) {
+      const buildScore = (dimension: string) => {
+        const scoreData = raw.evaluation?.[dimension];
+        if (!scoreData) {
+          return { score: 0, evidence: [], issues: [], strengths: [], suggestions: [] };
+        }
+
+        const rawScore = scoreData.score;
+        const normalizedScore = typeof rawScore === "number"
+          ? rawScore
+          : Number(rawScore || 0);
+
+        const evidence = Array.isArray(scoreData.evidence)
+          ? scoreData.evidence
+          : scoreData.evidence
+            ? [scoreData.evidence]
+            : [];
+
+        const issues = Array.isArray(scoreData.issues)
+          ? scoreData.issues
+          : scoreData.issues
+            ? [scoreData.issues]
+            : [];
+
+        const strengths = Array.isArray(scoreData.strengths)
+          ? scoreData.strengths
+          : scoreData.strengths
+            ? [scoreData.strengths]
+            : [];
+
+        const suggestions = Array.isArray(scoreData.suggestions)
+          ? scoreData.suggestions
+          : scoreData.suggestions
+            ? [scoreData.suggestions]
+            : [];
+
+        return {
+          score: normalizedScore,
+          evidence,
+          issues,
+          strengths,
+          suggestions
+        };
+      };
+
+      return {
+        articleContext: raw.articleContext,
+        scores: {
+          experience: buildScore("experience"),
+          expertise: buildScore("expertise"),
+          authoritativeness: buildScore("authoritativeness"),
+          trustworthiness: buildScore("trustworthiness"),
+          overall: typeof raw.overall_score === "number"
+            ? raw.overall_score
+            : Number(raw.overall_score || 0)
+        },
+        analysis: raw.analysis || { strengths: [], weaknesses: [], opportunities: [] },
+        summary: raw.summary || "",
+        suggestions: Array.isArray(raw.suggestions) ? raw.suggestions : []
+      };
+    }
+
     if (raw?.dimensions) {
       const buildScore = (dimension: string) => {
         const scoreData = raw.dimensions?.[dimension];
