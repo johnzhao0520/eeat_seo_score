@@ -764,38 +764,37 @@ ${contextInfo}
       return [];
     };
 
-    if (raw?.evaluation) {
-      const buildScore = (dimension: string) => {
-        const scoreData = raw.evaluation?.[dimension] ?? raw.evaluation?.[dimension.charAt(0).toUpperCase() + dimension.slice(1)];
-        if (!scoreData) {
-          return { score: 0, evidence: [], issues: [], strengths: [], suggestions: [] };
-        }
-
-        const normalizedScore = normalizeScoreValue(scoreData.score);
-
-        const evidence = normalizeEvidenceField(scoreData.evidence);
-        const issues = normalizeEvidenceField(scoreData.issues);
-        const strengths = normalizeEvidenceField(scoreData.strengths);
-        const suggestions = normalizeEvidenceField(scoreData.suggestions);
-
-        return {
-          score: normalizedScore,
-          evidence,
-          issues,
-          strengths,
-          suggestions
-        };
-      };
+    const buildDimensionScore = (scoreData: any) => {
+      if (!scoreData) {
+        return { score: 0, evidence: [], issues: [], strengths: [], suggestions: [] };
+      }
 
       return {
+        score: normalizeScoreValue(scoreData.score),
+        evidence: normalizeEvidenceField(scoreData.evidence),
+        issues: normalizeEvidenceField(scoreData.issues),
+        strengths: normalizeEvidenceField(scoreData.strengths),
+        suggestions: normalizeEvidenceField(scoreData.suggestions)
+      };
+    };
+
+    const resolveDimension = (source: any, dimension: string) => {
+      if (!source) return null;
+      return source[dimension] ?? source[dimension.charAt(0).toUpperCase() + dimension.slice(1)];
+    };
+
+    const buildScoresFromSource = (source: any) => ({
+      experience: buildDimensionScore(resolveDimension(source, "experience")),
+      expertise: buildDimensionScore(resolveDimension(source, "expertise")),
+      authoritativeness: buildDimensionScore(resolveDimension(source, "authoritativeness")),
+      trustworthiness: buildDimensionScore(resolveDimension(source, "trustworthiness")),
+      overall: normalizeScoreValue(raw.overall_score)
+    });
+
+    if (raw?.evaluation) {
+      return {
         articleContext: raw.articleContext,
-        scores: {
-          experience: buildScore("experience"),
-          expertise: buildScore("expertise"),
-          authoritativeness: buildScore("authoritativeness"),
-          trustworthiness: buildScore("trustworthiness"),
-          overall: normalizeScoreValue(raw.overall_score)
-        },
+        scores: buildScoresFromSource(raw.evaluation),
         analysis: raw.analysis || { strengths: [], weaknesses: [], opportunities: [] },
         summary: raw.summary || "",
         suggestions: Array.isArray(raw.suggestions) ? raw.suggestions : []
@@ -803,59 +802,20 @@ ${contextInfo}
     }
 
     if (raw?.dimensions) {
-      const buildScore = (dimension: string) => {
-        const scoreData = raw.dimensions?.[dimension];
-        if (!scoreData) {
-          return { score: 0, evidence: [], issues: [], strengths: [], suggestions: [] };
-        }
-        return {
-          score: normalizeScoreValue(scoreData.score),
-          evidence: normalizeEvidenceField(scoreData.evidence),
-          issues: normalizeEvidenceField(scoreData.issues),
-          strengths: normalizeEvidenceField(scoreData.strengths),
-          suggestions: normalizeEvidenceField(scoreData.suggestions)
-        };
-      };
-
       return {
         articleContext: raw.articleContext,
-        scores: {
-          experience: buildScore("experience"),
-          expertise: buildScore("expertise"),
-          authoritativeness: buildScore("authoritativeness"),
-          trustworthiness: buildScore("trustworthiness"),
-          overall: normalizeScoreValue(raw.overall_score)
-        },
+        scores: buildScoresFromSource(raw.dimensions),
         analysis: raw.analysis || { strengths: [], weaknesses: [], opportunities: [] },
         summary: raw.summary || "",
         suggestions: Array.isArray(raw.suggestions) ? raw.suggestions : []
       };
     }
 
-    if (raw?.summary && (raw?.experience || raw?.expertise || raw?.authoritativeness || raw?.trustworthiness)) {
-      const buildScore = (dimension: string) => {
-        const scoreData = raw[dimension];
-        if (!scoreData) {
-          return { score: 0, evidence: [], issues: [], strengths: [], suggestions: [] };
-        }
-        return {
-          score: normalizeScoreValue(scoreData.score),
-          evidence: normalizeEvidenceField(scoreData.evidence),
-          issues: normalizeEvidenceField(scoreData.issues),
-          strengths: normalizeEvidenceField(scoreData.strengths),
-          suggestions: normalizeEvidenceField(scoreData.suggestions)
-        };
-      };
-
+    if (raw?.summary && (raw?.experience || raw?.expertise || raw?.authoritativeness || raw?.trustworthiness || raw?.dimensions || raw?.evaluation)) {
+      const source = raw.evaluation || raw.dimensions || raw;
       return {
         articleContext: raw.articleContext,
-        scores: {
-          experience: buildScore("experience"),
-          expertise: buildScore("expertise"),
-          authoritativeness: buildScore("authoritativeness"),
-          trustworthiness: buildScore("trustworthiness"),
-          overall: normalizeScoreValue(raw.overall_score)
-        },
+        scores: buildScoresFromSource(source),
         analysis: raw.analysis || { strengths: [], weaknesses: [], opportunities: [] },
         summary: raw.summary || "",
         suggestions: Array.isArray(raw.suggestions) ? raw.suggestions : []
