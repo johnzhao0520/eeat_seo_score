@@ -242,7 +242,8 @@ export class ZhipuEvaluatorEnhancedV2 {
     messages: ZhipuMessage[],
     maxTokens: number = 8000,
     timeout: number = 50000,
-    retries: number = 1
+    retries: number = 1,
+    forceJson: boolean = true
   ): Promise<ZhipuResponse | null> {
     const attempts = Math.max(1, retries);
 
@@ -263,6 +264,7 @@ export class ZhipuEvaluatorEnhancedV2 {
             max_tokens: maxTokens,
             temperature: 0.2, // 降低温度以获得更一致的结果
             stream: false,
+            ...(forceJson ? { response_format: { type: "json_object" } } : {})
           }),
           signal: controller.signal,
         });
@@ -371,6 +373,8 @@ export class ZhipuEvaluatorEnhancedV2 {
 
   private buildChunkSystemPrompt(): string {
     return `你是E-E-A-T评估专家，需要对文章片段进行局部评估。
+
+【重要】仅输出JSON，不要输出推理过程或解释性文字。
 
 【要求】
 1. 只基于片段内容评分，给出具体证据
@@ -605,6 +609,8 @@ ${summaries.join("\n")}
 
   private buildEnhancedSystemPrompt(): string {
     return `你是专业的E-E-A-T评估专家，基于Google的Experience、Expertise、Authoritativeness和Trustworthiness原则进行深度内容评估。
+
+【重要】仅输出JSON，不要输出推理过程或解释性文字。
 
 【核心要求】
 1. **提供具体、可操作的反馈** - 必须基于文章的具体内容，不要使用模板化建议
