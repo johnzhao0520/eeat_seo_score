@@ -48,53 +48,15 @@ export class ZhipuEvaluatorEnhancedV2 {
         return await this.evaluateWithAIChunked(content, title, author, context, options);
       }
 
-      // 对于长内容进行智能截取，保留更多关键信息
-      const processedContent = this.preprocessContent(content, 6000); // 增加到6000字符
-      const systemPrompt = this.buildEnhancedSystemPrompt();
-      const userPrompt = this.buildUserPrompt(processedContent, title, author, content.length);
-
-      logger.info("开始智谱AI Enhanced V2 评估", {
-        contentLength: content.length,
-        processedLength: processedContent.length,
-        wasTruncated: processedContent.length < content.length,
+      return await this.evaluateWithAISinglePass(
+        content,
         title,
-        hasAuthor: !!author
-      });
-
-      const messages: ZhipuMessage[] = [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ];
-
-      // Enhanced V2 使用50秒超时，充分利用Vercel Pro
-      const response = await this.makeZhipuRequest(
-        messages,
-        8000,
-        this.calculateAdaptiveTimeout(content.length, 8000, options.maxTimeoutMs, 50000),
-        2
+        author,
+        context,
+        options,
+        6000,
+        8000
       );
-
-      if (!response || !response.choices || response.choices.length === 0) {
-        throw new Error("智谱AI返回了空响应");
-      }
-
-      const aiResult = this.parseAIResponse(response.choices[0].message.content);
-
-      // 使用增强的结果格式化器
-      const result = this.formatEnhancedAIResult(aiResult, content, title, author);
-
-      logger.info("智谱AI Enhanced V2 评估完成", {
-        overall: result.scores.overall,
-        scores: {
-          experience: result.scores.experience.score,
-          expertise: result.scores.expertise.score,
-          authoritativeness: result.scores.authoritativeness.score,
-          trustworthiness: result.scores.trustworthiness.score
-        },
-        hasDetailedFeedback: result.analysis.strengths.length > 0 || result.analysis.weaknesses.length > 0
-      });
-
-      return result;
     } catch (error) {
       logger.error("智谱AI Enhanced V2 评估失败", {
         error: error instanceof Error ? error.message : String(error),
@@ -103,6 +65,65 @@ export class ZhipuEvaluatorEnhancedV2 {
       });
       return null;
     }
+  }
+
+  private async evaluateWithAISinglePass(
+    content: string,
+    title: string | undefined,
+    author: string | undefined,
+    context: ArticleContext | undefined,
+    options: EvaluateAIOptions,
+    maxContentLength: number,
+    maxTokens: number
+  ): Promise<EEATResult | null> {
+    // 对于长内容进行智能截取，保留更多关键信息
+    const processedContent = this.preprocessContent(content, maxContentLength);
+    const systemPrompt = this.buildEnhancedSystemPrompt();
+    const userPrompt = this.buildUserPrompt(processedContent, title, author, content.length);
+
+    logger.info("开始智谱AI Enhanced V2 评估", {
+      contentLength: content.length,
+      processedLength: processedContent.length,
+      wasTruncated: processedContent.length < content.length,
+      title,
+      hasAuthor: !!author,
+      maxTokens
+    });
+
+    const messages: ZhipuMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt }
+    ];
+
+    // Enhanced V2 使用50秒超时，充分利用Vercel Pro
+    const response = await this.makeZhipuRequest(
+      messages,
+      maxTokens,
+      this.calculateAdaptiveTimeout(content.length, maxTokens, options.maxTimeoutMs, 50000),
+      2
+    );
+
+    if (!response || !response.choices || response.choices.length === 0) {
+      throw new Error("智谱AI返回了空响应");
+    }
+
+    const aiResult = this.parseAIResponse(response.choices[0].message.content);
+
+    // 使用增强的结果格式化器
+    const result = this.formatEnhancedAIResult(aiResult, content, title, author);
+
+    logger.info("智谱AI Enhanced V2 评估完成", {
+      overall: result.scores.overall,
+      scores: {
+        experience: result.scores.experience.score,
+        expertise: result.scores.expertise.score,
+        authoritativeness: result.scores.authoritativeness.score,
+        trustworthiness: result.scores.trustworthiness.score
+      },
+      hasDetailedFeedback: result.analysis.strengths.length > 0 || result.analysis.weaknesses.length > 0
+    });
+
+    return result;
   }
 
   private shouldUseChunked(content: string, requested?: boolean): boolean {
@@ -174,7 +195,18 @@ export class ZhipuEvaluatorEnhancedV2 {
     }
 
     if (chunkResults.length === 0) {
-      return null;
+      logger.warn("分段评估全部失败，回退为单次评估", {
+        contentLength: content.length
+      });
+      return this.evaluateWithAISinglePass(
+        content,
+        title,
+        author,
+        context,
+        options,
+        4000,
+        3000
+      );
     }
 
     const aggregatedScores = this.aggregateScores(chunkResults);
@@ -241,10 +273,16 @@ export class ZhipuEvaluatorEnhancedV2 {
           throw new Error(`智谱AI请求失败: ${response.status} ${response.statusText}`);
         }
 
-        const data = await response.json();
+        const responseText = await response.text();
+        let data: ZhipuResponse;
+        try {
+          data = JSON.parse(responseText) as ZhipuResponse;
+        } catch (parseError) {
+          throw new Error(`智谱AI响应解析失败: ${responseText.slice(0, 500)}`);
+        }
         const content = data?.choices?.[0]?.message?.content;
         if (!content || !content.trim()) {
-          throw new Error("智谱AI返回空内容");
+          throw new Error(`智谱AI返回空内容: ${responseText.slice(0, 500)}`);
         }
         return data;
       } catch (error) {
