@@ -50,7 +50,8 @@ export async function POST(request: NextRequest) {
           article.title,
           article.author,
           {
-            useAI: body.useAI || false
+            useAI: body.useAI || false,
+            useChunked: true
           }
         )
         results.push(result)
