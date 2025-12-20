@@ -169,8 +169,8 @@ export class ZhipuEvaluatorEnhancedV2 {
       try {
         const response = await this.makeZhipuRequest(
           messages,
-          1500,
-          this.calculateAdaptiveTimeout(chunk.length, 1500, options.maxTimeoutMs, 25000),
+          2500,
+          this.calculateAdaptiveTimeout(chunk.length, 2500, options.maxTimeoutMs, 25000),
           2
         );
 
