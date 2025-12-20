@@ -743,41 +743,40 @@ ${contextInfo}
       return raw;
     }
 
+    const normalizeScoreValue = (value: any): number => {
+      if (typeof value === "number") {
+        return value;
+      }
+      const numeric = Number(value);
+      if (!Number.isNaN(numeric)) {
+        return numeric;
+      }
+      const normalized = String(value || "").toLowerCase();
+      if (normalized.includes("high")) return 8;
+      if (normalized.includes("medium")) return 6;
+      if (normalized.includes("low")) return 4;
+      return 0;
+    };
+
+    const normalizeEvidenceField = (value: any): string[] => {
+      if (Array.isArray(value)) return value;
+      if (value) return [String(value)];
+      return [];
+    };
+
     if (raw?.evaluation) {
       const buildScore = (dimension: string) => {
-        const scoreData = raw.evaluation?.[dimension];
+        const scoreData = raw.evaluation?.[dimension] ?? raw.evaluation?.[dimension.charAt(0).toUpperCase() + dimension.slice(1)];
         if (!scoreData) {
           return { score: 0, evidence: [], issues: [], strengths: [], suggestions: [] };
         }
 
-        const rawScore = scoreData.score;
-        const normalizedScore = typeof rawScore === "number"
-          ? rawScore
-          : Number(rawScore || 0);
+        const normalizedScore = normalizeScoreValue(scoreData.score);
 
-        const evidence = Array.isArray(scoreData.evidence)
-          ? scoreData.evidence
-          : scoreData.evidence
-            ? [scoreData.evidence]
-            : [];
-
-        const issues = Array.isArray(scoreData.issues)
-          ? scoreData.issues
-          : scoreData.issues
-            ? [scoreData.issues]
-            : [];
-
-        const strengths = Array.isArray(scoreData.strengths)
-          ? scoreData.strengths
-          : scoreData.strengths
-            ? [scoreData.strengths]
-            : [];
-
-        const suggestions = Array.isArray(scoreData.suggestions)
-          ? scoreData.suggestions
-          : scoreData.suggestions
-            ? [scoreData.suggestions]
-            : [];
+        const evidence = normalizeEvidenceField(scoreData.evidence);
+        const issues = normalizeEvidenceField(scoreData.issues);
+        const strengths = normalizeEvidenceField(scoreData.strengths);
+        const suggestions = normalizeEvidenceField(scoreData.suggestions);
 
         return {
           score: normalizedScore,
@@ -795,9 +794,7 @@ ${contextInfo}
           expertise: buildScore("expertise"),
           authoritativeness: buildScore("authoritativeness"),
           trustworthiness: buildScore("trustworthiness"),
-          overall: typeof raw.overall_score === "number"
-            ? raw.overall_score
-            : Number(raw.overall_score || 0)
+          overall: normalizeScoreValue(raw.overall_score)
         },
         analysis: raw.analysis || { strengths: [], weaknesses: [], opportunities: [] },
         summary: raw.summary || "",
@@ -812,11 +809,11 @@ ${contextInfo}
           return { score: 0, evidence: [], issues: [], strengths: [], suggestions: [] };
         }
         return {
-          score: typeof scoreData.score === "number" ? scoreData.score : Number(scoreData.score || 0),
-          evidence: Array.isArray(scoreData.evidence) ? scoreData.evidence : [],
-          issues: Array.isArray(scoreData.issues) ? scoreData.issues : [],
-          strengths: Array.isArray(scoreData.strengths) ? scoreData.strengths : [],
-          suggestions: Array.isArray(scoreData.suggestions) ? scoreData.suggestions : []
+          score: normalizeScoreValue(scoreData.score),
+          evidence: normalizeEvidenceField(scoreData.evidence),
+          issues: normalizeEvidenceField(scoreData.issues),
+          strengths: normalizeEvidenceField(scoreData.strengths),
+          suggestions: normalizeEvidenceField(scoreData.suggestions)
         };
       };
 
@@ -827,9 +824,37 @@ ${contextInfo}
           expertise: buildScore("expertise"),
           authoritativeness: buildScore("authoritativeness"),
           trustworthiness: buildScore("trustworthiness"),
-          overall: typeof raw.overall_score === "number"
-            ? raw.overall_score
-            : Number(raw.overall_score || 0)
+          overall: normalizeScoreValue(raw.overall_score)
+        },
+        analysis: raw.analysis || { strengths: [], weaknesses: [], opportunities: [] },
+        summary: raw.summary || "",
+        suggestions: Array.isArray(raw.suggestions) ? raw.suggestions : []
+      };
+    }
+
+    if (raw?.summary && (raw?.experience || raw?.expertise || raw?.authoritativeness || raw?.trustworthiness)) {
+      const buildScore = (dimension: string) => {
+        const scoreData = raw[dimension];
+        if (!scoreData) {
+          return { score: 0, evidence: [], issues: [], strengths: [], suggestions: [] };
+        }
+        return {
+          score: normalizeScoreValue(scoreData.score),
+          evidence: normalizeEvidenceField(scoreData.evidence),
+          issues: normalizeEvidenceField(scoreData.issues),
+          strengths: normalizeEvidenceField(scoreData.strengths),
+          suggestions: normalizeEvidenceField(scoreData.suggestions)
+        };
+      };
+
+      return {
+        articleContext: raw.articleContext,
+        scores: {
+          experience: buildScore("experience"),
+          expertise: buildScore("expertise"),
+          authoritativeness: buildScore("authoritativeness"),
+          trustworthiness: buildScore("trustworthiness"),
+          overall: normalizeScoreValue(raw.overall_score)
         },
         analysis: raw.analysis || { strengths: [], weaknesses: [], opportunities: [] },
         summary: raw.summary || "",
