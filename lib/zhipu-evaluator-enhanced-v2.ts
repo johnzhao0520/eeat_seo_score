@@ -261,21 +261,6 @@ export class ZhipuEvaluatorEnhancedV2 {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  private buildChunkUserPrompt(
-    content: string,
-    index: number,
-    total: number,
-    title?: string,
-    author?: string
-  ): string {
-    return `请评估以下文章片段（第${index}/${total}段）：
-
-${title ? `标题：${title}\n` : ""}${author ? `作者：${author}\n` : ""}内容：
-${content}
-
-请严格输出JSON。`;
-  }
-
   private async requestAggregationSummary(
     chunkResults: EEATResult[],
     title: string | undefined,
