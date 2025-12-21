@@ -261,18 +261,6 @@ export class ZhipuEvaluatorEnhancedV2 {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  private buildChunkSystemPrompt(): string {
-    return `你是E-E-A-T评估专家，需要对文章片段进行局部评估。
-
-【要求】
-1. 只基于片段内容评分，给出具体证据
-2. 每个维度至少给出1条evidence
-3. JSON格式返回，字段与完整评估一致
-4. summary只需简短概述片段要点（1-2句）
-
-返回完整JSON结构。`;
-  }
-
   private buildChunkUserPrompt(
     content: string,
     index: number,
