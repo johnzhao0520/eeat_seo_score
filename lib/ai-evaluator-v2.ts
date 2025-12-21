@@ -105,6 +105,14 @@ First, analyze the article to determine:
 
 Then evaluate each E-E-A-T factor using the appropriate lens for that context.
 
+## **Completeness Requirements**
+
+- For analysis, return 3-5 strengths, 3-5 weaknesses, and 2-4 opportunities with short, specific bullets.
+- For suggestions, include at least 3 items; each must have: priority (high/medium/low), category, 1-sentence description, and 2-4 actionable items.
+- Summary should be 2-3 sentences covering current state and key next steps.
+- Avoid vague phrasing; make bullets concrete and article-specific.
+- Language rule: all narrative/labels/output MUST be in Simplified Chinese. Only when you cite or quote exact sentences/phrases from the article, keep those quoted fragments in the article's original language. Do NOT output full-English bullets; translate everything else to Chinese.
+
 ## **Adaptive Scoring Rubric**
 
 ### **Experience (1-10)**
