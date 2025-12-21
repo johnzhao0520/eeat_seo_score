@@ -257,42 +257,6 @@ export class ZhipuEvaluatorEnhancedV2 {
     return null;
   }
 
-  private splitContent(content: string, maxChunkLength: number): string[] {
-    if (content.length <= maxChunkLength) {
-      return [content];
-    }
-
-    const paragraphs = content.split(/\n\s*\n/);
-    const chunks: string[] = [];
-    let buffer = "";
-
-    for (const paragraph of paragraphs) {
-      const next = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
-      if (next.length <= maxChunkLength) {
-        buffer = next;
-        continue;
-      }
-
-      if (buffer) {
-        chunks.push(buffer);
-      }
-      if (paragraph.length > maxChunkLength) {
-        for (let i = 0; i < paragraph.length; i += maxChunkLength) {
-          chunks.push(paragraph.slice(i, i + maxChunkLength));
-        }
-        buffer = "";
-      } else {
-        buffer = paragraph;
-      }
-    }
-
-    if (buffer) {
-      chunks.push(buffer);
-    }
-
-    return chunks.filter(chunk => chunk.trim().length > 0);
-  }
-
   private async sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
