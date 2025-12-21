@@ -257,24 +257,6 @@ export class ZhipuEvaluatorEnhancedV2 {
     return null;
   }
 
-  private getAdaptiveTimeout(
-    contentLength: number,
-    maxTokens: number,
-    requestedTimeout?: number,
-    defaultTimeout: number = 50000
-  ): number {
-    const maxTimeout = Number(process.env.ZHIPU_MAX_TIMEOUT_MS || "120000");
-    if (requestedTimeout) {
-      return Math.min(requestedTimeout, maxTimeout);
-    }
-
-    const tokenFactor = Math.ceil(maxTokens / 1000) * 6000;
-    const lengthFactor = Math.ceil(contentLength / 1000) * 4000;
-    const adaptive = defaultTimeout + tokenFactor + lengthFactor;
-
-    return Math.min(Math.max(adaptive, defaultTimeout), maxTimeout);
-  }
-
   private splitContent(content: string, maxChunkLength: number): string[] {
     if (content.length <= maxChunkLength) {
       return [content];
